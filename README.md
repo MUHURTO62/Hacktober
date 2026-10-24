@@ -16,7 +16,7 @@ This project was developed with AI-assisted coding support during the hackathon 
 
 ## Important model/provider note
 
-The intended model is `openai/gpt-oss-20b` via Groq. Before final submission, confirm in the Groq dashboard that the model is available to your account, that it works in your region, and that the model usage meets the hackathon eligibility and policy requirements. This project does not include a real API key in source files or the frontend.
+The intended model is `openai/gpt-oss-20b` via Groq. This is documented as the target model for the project, but availability and policy eligibility must be confirmed in the Groq dashboard before final submission. This project does not include a real API key in source files or the frontend.
 
 ## Local setup
 
