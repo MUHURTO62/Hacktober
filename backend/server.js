@@ -13,7 +13,7 @@ const MODEL_NAME = process.env.MODEL_NAME || 'openai/gpt-oss-20b';
 app.use(express.json());
 app.use(
   cors({
-    origin: [FRONTEND_URL, 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+    origin: [FRONTEND_URL, 'https://hacktober-tau.vercel.app', 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
     credentials: true,
   })
 );
