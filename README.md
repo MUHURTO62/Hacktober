@@ -21,19 +21,24 @@ The intended model is `openai/gpt-oss-20b` via Groq. Before final submission, co
 ## Local setup
 
 1. Open a terminal in the `backend` folder and create a local environment file:
-   - Copy `.env.example` to `.env`
+   - Copy `backend/.env.example` to `backend/.env`
    - Add your Groq API key to `GROQ_API_KEY`
-2. Run:
+2. Open a second terminal in the `frontend` folder and create a local environment file:
+   - Copy `frontend/.env.example` to `frontend/.env`
+   - Leave the default value unless you are using a custom API URL
+3. Run:
    ```bash
+   cd backend
    npm install
    npm run dev
    ```
-3. Open a second terminal in the `frontend` folder and run:
+4. In another terminal, run:
    ```bash
+   cd frontend
    npm install
    npm run dev -- --host 0.0.0.0
    ```
-4. Open the local Vite URL shown in the terminal.
+5. Open the local Vite URL shown in the terminal.
 
 ## Backend environment variables
 
