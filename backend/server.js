@@ -165,10 +165,11 @@ app.post('/api/practice', async (req, res) => {
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
+    const normalizedContent = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
 
     let parsed;
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(normalizedContent);
     } catch (error) {
       parsed = {
         questions: [content],
