@@ -105,17 +105,26 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">University study assistant</p>
-          <h1>PaperPilot</h1>
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">P</span>
+          <div>
+            <p className="eyebrow">Study desk / Chittagong</p>
+            <h1>PaperPilot<span className="brand-period">.</span></h1>
+          </div>
         </div>
-        <div className="status-pill">Demo data only</div>
+        <div className="topbar-meta">
+          <span className="status-pill"><span className="status-dot" /> Demo edition</span>
+          <span className="topbar-date">FIELD NOTES / 2026</span>
+        </div>
       </header>
 
       <main className="layout">
-        <section className="panel">
+        <section className="panel question-panel">
           <div className="panel-header">
-            <h2>Question Bank</h2>
+            <div>
+              <p className="section-kicker">01 / Question archive</p>
+              <h2>Question Bank</h2>
+            </div>
             <span className="badge warning">Sample data, not official past papers</span>
           </div>
 
@@ -166,6 +175,12 @@ function App() {
             </label>
           </div>
 
+          {!loading && !error && (
+            <div className="result-count">
+              <span>{String(filteredQuestions.length).padStart(2, '0')}</span> entries in view
+            </div>
+          )}
+
           {loading && <div className="state-box">Loading demo question bank...</div>}
 
           {!loading && error && <div className="state-box error">{error}</div>}
@@ -205,8 +220,11 @@ function App() {
 
         <aside className="panel ai-panel">
           <div className="panel-header compact">
-            <h2>AI Practice</h2>
-            <span className="badge success">Groq powered</span>
+            <div>
+              <p className="section-kicker">02 / Practice lab</p>
+              <h2>AI Practice</h2>
+            </div>
+            <span className="badge success"><span className="status-dot" /> Groq / live</span>
           </div>
 
           <label>
@@ -231,7 +249,7 @@ function App() {
           </label>
 
           <button className="primary-button" onClick={handleGeneratePractice} disabled={aiLoading}>
-            {aiLoading ? 'Generating...' : 'Generate practice'}
+            {aiLoading ? 'Generating set...' : 'Generate practice set'}
           </button>
 
           {aiError && <div className="state-box error">{aiError}</div>}
