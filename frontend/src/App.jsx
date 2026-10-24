@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const SAVED_MODEL_KEY = 'paperpilot.ai-model';
+
+function readSavedModelKey() {
+  try {
+    return window.sessionStorage.getItem(SAVED_MODEL_KEY) || '';
+  } catch {
+    return '';
+  }
+}
 
 function App() {
   const [questions, setQuestions] = useState([]);
@@ -15,6 +24,11 @@ function App() {
   const [practiceResult, setPracticeResult] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [modelOptions, setModelOptions] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState('');
+  const [selectedModelKey, setSelectedModelKey] = useState(readSavedModelKey);
+  const [lastMode, setLastMode] = useState('practice');
 
   const uniqueSubjects = useMemo(
     () => [...new Set(questions.map((q) => q.subject))],
@@ -31,9 +45,43 @@ function App() {
     [questions]
   );
 
+  const selectedModel = modelOptions.find((option) => option.key === selectedModelKey);
+  const availableModelCount = modelOptions.filter((option) => option.available).length;
+
   useEffect(() => {
     fetchQuestions();
+    fetchAIModels();
   }, []);
+
+  useEffect(() => {
+    if (!selectedModelKey) return;
+    try {
+      window.sessionStorage.setItem(SAVED_MODEL_KEY, selectedModelKey);
+    } catch {
+      // Session storage may be unavailable in private browsing contexts.
+    }
+  }, [selectedModelKey]);
+
+  const fetchAIModels = async () => {
+    try {
+      setModelsLoading(true);
+      setModelsError('');
+      const response = await fetch(`${API_URL}/api/ai/models`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not load available AI models.');
+      const options = data.models || [];
+      setModelOptions(options);
+      setSelectedModelKey((current) =>
+        options.some((option) => option.key === current && option.available)
+          ? current
+          : data.defaultModelKey || ''
+      );
+    } catch (err) {
+      setModelsError(err.message || 'Could not load AI model configuration.');
+    } finally {
+      setModelsLoading(false);
+    }
+  };
 
   const fetchQuestions = async () => {
     try {
@@ -66,16 +114,26 @@ function App() {
     return subjectMatch && semesterMatch && yearMatch && textMatch;
   });
 
-  const handleGeneratePractice = async () => {
+  const handleGeneratePractice = async (mode = 'practice') => {
     const trimmed = aiInput.trim();
     if (!trimmed) {
       setAiError('Please enter a question or click a question card to reuse it.');
+      return;
+    }
+    if (trimmed.length > 2000) {
+      setAiError('Keep your question under 2,000 characters.');
+      return;
+    }
+    if (!selectedModel || !selectedModel.available) {
+      setAiError(selectedModel?.unavailableReason || 'Choose a configured AI model to continue.');
       return;
     }
 
     try {
       setAiLoading(true);
       setAiError('');
+      setPracticeResult(null);
+      setLastMode(mode);
 
       const response = await fetch(`${API_URL}/api/practice`, {
         method: 'POST',
@@ -85,6 +143,9 @@ function App() {
         body: JSON.stringify({
           subject: aiSubject,
           question: trimmed,
+          provider: selectedModel.provider,
+          model: selectedModel.modelId,
+          mode,
         }),
       });
 
@@ -94,7 +155,7 @@ function App() {
         throw new Error(data.error || 'AI practice generation failed.');
       }
 
-      setPracticeResult(data.result || null);
+      setPracticeResult(data);
     } catch (err) {
       setAiError(err.message || 'Unexpected error while generating practice.');
     } finally {
@@ -116,10 +177,14 @@ function App() {
           <span className="status-pill"><span className="status-dot" /> Demo edition</span>
           <span className="topbar-date">FIELD NOTES / 2026</span>
         </div>
+        <nav className="main-nav" aria-label="Main navigation">
+          <a href="#question-bank">Question bank</a>
+          <a href="#ai-practice">AI practice</a>
+        </nav>
       </header>
 
       <main className="layout">
-        <section className="panel question-panel">
+        <section className="panel question-panel" id="question-bank">
           <div className="panel-header">
             <div>
               <p className="section-kicker">01 / Question archive</p>
@@ -218,14 +283,58 @@ function App() {
           </div>
         </section>
 
-        <aside className="panel ai-panel">
+        <aside className="panel ai-panel" id="ai-practice">
           <div className="panel-header compact">
             <div>
               <p className="section-kicker">02 / Practice lab</p>
               <h2>AI Practice</h2>
             </div>
-            <span className="badge success"><span className="status-dot" /> Groq / live</span>
+            <span className="badge success">
+              <span className="status-dot" />
+              {selectedModel ? `${selectedModel.providerName} / selected` : 'Choose a model'}
+            </span>
           </div>
+
+          <label htmlFor="model-select">AI model</label>
+          <select
+            id="model-select"
+            value={selectedModelKey}
+            disabled={modelsLoading || modelOptions.length === 0}
+            onChange={(event) => {
+              setSelectedModelKey(event.target.value);
+              setAiError('');
+              setPracticeResult(null);
+            }}
+          >
+            {modelsLoading && <option value="">Loading model options...</option>}
+            {!modelsLoading && modelOptions.length === 0 && <option value="">Model options unavailable</option>}
+            {!modelsLoading && modelOptions.length > 0 && !selectedModelKey && (
+              <option value="">Select an available model</option>
+            )}
+            {modelOptions.map((option) => (
+              <option key={option.key} value={option.key} disabled={!option.available}>
+                {option.providerName} / {option.displayName}{option.free ? ' / currently listed free' : ''}
+                {!option.available ? ' / not configured' : ''}
+              </option>
+            ))}
+          </select>
+          {selectedModel && (
+            <div className="model-detail" aria-live="polite">
+              <strong>{selectedModel.providerName}</strong>
+              <span>{selectedModel.modelId}</span>
+              <small>{selectedModel.priceLabel}</small>
+            </div>
+          )}
+          {!modelsLoading && availableModelCount === 0 && (
+            <div className="state-box error" role="status">
+              No AI provider is configured. Add a provider key in the backend environment to enable AI practice.
+            </div>
+          )}
+          {modelsError && (
+            <div className="state-box error" role="alert">
+              {modelsError} <button className="text-button" onClick={fetchAIModels}>Retry</button>
+            </div>
+          )}
 
           <label>
             Subject
@@ -244,29 +353,56 @@ function App() {
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
               placeholder="Paste a question or describe the concept you want to practice"
+              maxLength={2000}
               rows={7}
             />
           </label>
 
-          <button className="primary-button" onClick={handleGeneratePractice} disabled={aiLoading}>
-            {aiLoading ? 'Generating set...' : 'Generate practice set'}
-          </button>
+          <div className="practice-actions">
+            <button
+              className="primary-button"
+              onClick={() => handleGeneratePractice('practice')}
+              disabled={aiLoading || modelsLoading || !selectedModel?.available}
+            >
+              {aiLoading && lastMode === 'practice' ? 'Generating questions...' : 'Generate practice questions'}
+            </button>
+            <button
+              className="secondary-button"
+              onClick={() => handleGeneratePractice('explain')}
+              disabled={aiLoading || modelsLoading || !selectedModel?.available}
+            >
+              {aiLoading && lastMode === 'explain' ? 'Explaining...' : 'Explain this question'}
+            </button>
+          </div>
 
-          {aiError && <div className="state-box error">{aiError}</div>}
+          {aiError && (
+            <div className="state-box error" role="alert">
+              {aiError} <button className="text-button" onClick={() => handleGeneratePractice(lastMode)}>Retry</button>
+            </div>
+          )}
 
           {practiceResult && (
-            <div className="practice-result">
-              <p className="small-label">Sample study content generated via Groq</p>
-              <h3>Practice set</h3>
-              <ul>
-                {(practiceResult.questions || []).map((item, index) => (
-                  <li key={index}>
-                    <strong>Q{index + 1}:</strong> {item}
-                    <p>{practiceResult.explanations?.[index] || 'Explanation coming soon.'}</p>
-                  </li>
-                ))}
-              </ul>
-              <p className="note">{practiceResult.note || 'This is sample practice content for study use.'}</p>
+            <div className="practice-result" aria-live="polite">
+              <p className="small-label">
+                {practiceResult.source} / {practiceResult.model}
+              </p>
+              <h3>{practiceResult.mode === 'explain' ? 'Question explanation' : 'Practice set'}</h3>
+              {practiceResult.result?.questions?.length > 0 && (
+                <ol className="generated-questions">
+                  {practiceResult.result.questions.map((item, index) => (
+                    <li key={`${index}-${item}`}>
+                      <strong>{item}</strong>
+                      {practiceResult.result.explanations?.[index] && (
+                        <p>{practiceResult.result.explanations[index]}</p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {practiceResult.mode === 'explain' && practiceResult.result?.explanations?.map((item, index) => (
+                <p className="answer-explanation" key={`${index}-${item}`}>{item}</p>
+              ))}
+              <p className="note">{practiceResult.result?.note || 'Sample study content, not official exam material.'}</p>
             </div>
           )}
         </aside>

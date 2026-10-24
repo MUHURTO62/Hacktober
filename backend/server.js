@@ -1,16 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const { getDefaultModelKey, getModelOptions, generatePractice } = require('./ai/aiService');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const MODEL_NAME = process.env.MODEL_NAME || 'openai/gpt-oss-20b';
 
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 app.use(
   cors({
     origin: [FRONTEND_URL, 'https://hacktober-tau.vercel.app', 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
@@ -72,11 +71,32 @@ const demoQuestions = [
 ];
 
 app.get('/api/health', (req, res) => {
+  const defaultModelKey = getDefaultModelKey();
+  const defaultModel = getModelOptions().find((option) => option.key === defaultModelKey);
+  const availableModels = getModelOptions().filter((option) => option.available);
   res.json({
     status: 'ok',
     service: 'PaperPilot backend',
-    model: MODEL_NAME,
+    model: defaultModel?.modelId || process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+    availableProviders: [...new Set(availableModels.map((option) => option.provider))],
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/ai/models', (req, res) => {
+  res.json({
+    models: getModelOptions().map(({ key, provider, providerName, modelId, displayName, priceLabel, free, available, unavailableReason }) => ({
+      key,
+      provider,
+      providerName,
+      modelId,
+      displayName,
+      priceLabel,
+      free,
+      available,
+      unavailableReason,
+    })),
+    defaultModelKey: getDefaultModelKey(),
   });
 });
 
@@ -115,78 +135,56 @@ app.get('/api/questions', (req, res) => {
 });
 
 app.post('/api/practice', async (req, res) => {
-  const { subject, question } = req.body || {};
+  const { subject, question, provider, model, mode = 'practice' } = req.body || {};
 
-  if (!question || !question.trim()) {
+  if (typeof question !== 'string' || !question.trim()) {
     return res.status(400).json({
       error: 'Please enter a question or select a subject before generating practice content.',
     });
   }
 
-  if (!GROQ_API_KEY) {
-    return res.status(500).json({
-      error: 'Groq API key is not configured on the backend. Add GROQ_API_KEY to the server environment before running the AI feature.',
-    });
+  if (question.trim().length > 2000) {
+    return res.status(400).json({ error: 'Keep the question under 2,000 characters.' });
+  }
+
+  if (typeof subject !== 'undefined' && (typeof subject !== 'string' || subject.length > 100)) {
+    return res.status(400).json({ error: 'Subject must be plain text under 100 characters.' });
+  }
+
+  if (!['practice', 'explain'].includes(mode)) {
+    return res.status(400).json({ error: 'Choose a supported AI task.' });
+  }
+
+  let selectedProvider = provider;
+  let selectedModel = model;
+  if (!selectedProvider && !selectedModel) {
+    const defaultKey = getDefaultModelKey();
+    const defaultOption = getModelOptions().find((option) => option.key === defaultKey);
+    if (!defaultOption) {
+      return res.status(503).json({
+        error: 'No AI provider is configured. Add GROQ_API_KEY or OPENROUTER_API_KEY to the backend environment.',
+      });
+    }
+    selectedProvider = defaultOption.provider;
+    selectedModel = defaultOption.modelId;
+  }
+
+  if (typeof selectedProvider !== 'string' || typeof selectedModel !== 'string') {
+    return res.status(400).json({ error: 'Select a supported AI provider and model.' });
   }
 
   try {
-    const prompt = `You are helping a university student practice exam questions. Create 3 short practice questions similar to this topic and provide a simple explanation for each. Use this context: subject=${subject || 'General study'}, question=${question}. Keep the output in JSON with keys: questions (array of strings), explanations (array of strings), and note. The note should say this is sample practice content for study. Do not claim it is an official paper.`;
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: MODEL_NAME,
-        messages: [
-          {
-            role: 'system',
-            content: 'You generate educational exam practice materials in a helpful and concise manner.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 600,
-      }),
+    const result = await generatePractice({
+      provider: selectedProvider,
+      model: selectedModel,
+      subject,
+      question: question.trim(),
+      mode,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(502).json({
-        error: 'The AI service did not respond successfully. Please verify the Groq model and API key in the backend environment.',
-        detail: errorText,
-      });
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    const normalizedContent = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-
-    let parsed;
-    try {
-      parsed = JSON.parse(normalizedContent);
-    } catch (error) {
-      parsed = {
-        questions: [content],
-        explanations: ['The AI response was returned as text. Please try again with a simpler question.'],
-        note: 'Sample study content only.',
-      };
-    }
-
-    return res.json({
-      source: 'Groq',
-      model: MODEL_NAME,
-      result: parsed,
-    });
+    return res.json(result);
   } catch (error) {
-    return res.status(500).json({
-      error: 'Failed to generate practice content. Please check the backend configuration and try again.',
-      detail: error.message,
+    return res.status(error.status || 502).json({
+      error: error.message || 'Failed to generate practice content. Please retry or choose another model.',
     });
   }
 });
